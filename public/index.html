@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadastro de Pessoas</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: system-ui, sans-serif;
+        background: #f4f6f8;
+        color: #1f2937;
+        margin: 0;
+        padding: 32px 16px;
+      }
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      h1 {
+        margin-top: 0;
+      }
+      form,
+      table {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
+      }
+      form {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        padding: 16px;
+        margin-bottom: 24px;
+        align-items: end;
+      }
+      label {
+        display: grid;
+        gap: 4px;
+        font-size: 14px;
+      }
+      input {
+        padding: 8px;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        font-size: 15px;
+      }
+      button {
+        padding: 9px 14px;
+        border: 0;
+        border-radius: 6px;
+        background: #2563eb;
+        color: #fff;
+        font-size: 15px;
+        cursor: pointer;
+      }
+      button.secundario {
+        background: #64748b;
+      }
+      button.perigo {
+        background: #dc2626;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        overflow: hidden;
+      }
+      th,
+      td {
+        padding: 10px 12px;
+        text-align: left;
+        border-bottom: 1px solid #e5e7eb;
+      }
+      th {
+        background: #f1f5f9;
+      }
+      td.acoes {
+        display: flex;
+        gap: 6px;
+      }
+      #mensagem {
+        min-height: 24px;
+        color: #dc2626;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Cadastro de Pessoas</h1>
+      <form id="formulario">
+        <label>CPF <input id="cpf" required placeholder="000.000.000-00" /></label>
+        <label>Nome <input id="nome" required /></label>
+        <label>Data de nascimento <input id="dataNascimento" type="date" required /></label>
+        <button type="submit" id="salvar">Cadastrar</button>
+        <button type="button" id="cancelar" class="secundario" hidden>Cancelar</button>
+      </form>
+      <p id="mensagem"></p>
+      <table>
+        <thead>
+          <tr>
+            <th>CPF</th>
+            <th>Nome</th>
+            <th>Nascimento</th>
+            <th>Idade</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="lista"></tbody>
+      </table>
+    </main>
+    <script>
+      const form = document.getElementById('formulario');
+      const campos = ['cpf', 'nome', 'dataNascimento'].map((id) => document.getElementById(id));
+      const [cpf, nome, dataNascimento] = campos;
+      const mensagem = document.getElementById('mensagem');
+      const botaoSalvar = document.getElementById('salvar');
+      const botaoCancelar = document.getElementById('cancelar');
+      let editando = null;
+
+      async function api(url, opcoes = {}) {
+        const res = await fetch(url, {
+          headers: { 'Content-Type': 'application/json' },
+          ...opcoes,
+        });
+        if (res.status === 204) return null;
+        const corpo = await res.json();
+        if (!res.ok) throw new Error(corpo.erro);
+        return corpo;
+      }
+
+      function formatarData(iso) {
+        const [ano, mes, dia] = iso.split('-');
+        return `${dia}/${mes}/${ano}`;
+      }
+
+      function linha(pessoa) {
+        const tr = document.createElement('tr');
+        [pessoa.cpf, pessoa.nome, formatarData(pessoa.dataNascimento), pessoa.idade].forEach(
+          (valor) => {
+            const td = document.createElement('td');
+            td.textContent = valor;
+            tr.appendChild(td);
+          },
+        );
+        const acoes = document.createElement('td');
+        acoes.className = 'acoes';
+        const editar = document.createElement('button');
+        editar.textContent = 'Editar';
+        editar.className = 'secundario';
+        editar.onclick = () => iniciarEdicao(pessoa);
+        const excluir = document.createElement('button');
+        excluir.textContent = 'Excluir';
+        excluir.className = 'perigo';
+        excluir.onclick = () => remover(pessoa.cpf);
+        acoes.append(editar, excluir);
+        tr.appendChild(acoes);
+        return tr;
+      }
+
+      async function carregar() {
+        const pessoas = await api('/api/pessoas');
+        document.getElementById('lista').replaceChildren(...pessoas.map(linha));
+      }
+
+      function iniciarEdicao(pessoa) {
+        editando = pessoa.cpf;
+        cpf.value = pessoa.cpf;
+        cpf.disabled = true;
+        nome.value = pessoa.nome;
+        dataNascimento.value = pessoa.dataNascimento;
+        botaoSalvar.textContent = 'Salvar alterações';
+        botaoCancelar.hidden = false;
+      }
+
+      function limpar() {
+        editando = null;
+        form.reset();
+        cpf.disabled = false;
+        botaoSalvar.textContent = 'Cadastrar';
+        botaoCancelar.hidden = true;
+      }
+
+      async function remover(cpfPessoa) {
+        if (!confirm(`Excluir o CPF ${cpfPessoa}?`)) return;
+        await api(`/api/pessoas/${encodeURIComponent(cpfPessoa)}`, { method: 'DELETE' });
+        carregar();
+      }
+
+      form.addEventListener('submit', async (evento) => {
+        evento.preventDefault();
+        mensagem.textContent = '';
+        const dados = { nome: nome.value, dataNascimento: dataNascimento.value };
+        try {
+          if (editando) {
+            await api(`/api/pessoas/${encodeURIComponent(editando)}`, {
+              method: 'PUT',
+              body: JSON.stringify(dados),
+            });
+          } else {
+            await api('/api/pessoas', {
+              method: 'POST',
+              body: JSON.stringify({ ...dados, cpf: cpf.value }),
+            });
+          }
+          limpar();
+          carregar();
+        } catch (erro) {
+          mensagem.textContent = erro.message;
+        }
+      });
+
+      botaoCancelar.addEventListener('click', limpar);
+      carregar();
+    </script>
+  </body>
+</html>

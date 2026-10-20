@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  qualidade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Análise estática (ESLint)
+        run: npm run lint
+      - name: Formatação (Prettier)
+        run: npm run format:check
+      - name: Testes unitários
+        run: npm run test:unit
+      - name: Testes de integração
+        run: npm run test:integration
+
+  imagem:
+    needs: qualidade
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build da imagem Docker
+        run: docker build -t crud-pessoas:ci .
+      - name: Smoke test do container
+        run: |
+          docker run -d --name app -p 3000:3000 crud-pessoas:ci
+          for i in $(seq 1 10); do curl -sf http://localhost:3000/health && exit 0; sleep 1; done
+          docker logs app
+          exit 1
